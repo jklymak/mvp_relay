@@ -17,6 +17,6 @@ while 1:
         num+=1
         
         conn.send(data)
-        time.sleep(1)
+        time.sleep(0.05)
     except:
         break
