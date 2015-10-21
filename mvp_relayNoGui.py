@@ -51,8 +51,8 @@ udpOutPort = 2021
 #udpInPorts = []
 #udpInPorts = [21567, 21568]
 #udpInPorts = [21567]
-#udpInPorts = [('127.0.0.1',23),('127.0.0.1',26)]
-udpInPorts = [('127.0.0.1',23)]
+udpInPorts = [('127.0.0.1',23),('127.0.0.1',26)]
+#udpInPorts = [('127.0.0.1',23)]
 print 'hello'
 
 # Additional UDP parameters:
@@ -549,7 +549,7 @@ class ThreadedClient:
             sys.exit(1)
             
         try:
-            time.sleep(0.2)
+            time.sleep(0.1)
         except:
             self.endApplication()
         self.periodicCall()
