@@ -60,9 +60,9 @@ udpInBufferLength = 1024 # [bytes]
 UDPTIMEOUT = 1 # [seconds]
 
 # TCP parameters:
-tcpInPorts = [50008]
-tcpAddresses = ['127.0.0.1']
-tcpInBufferLength = 1024
+#tcpInPorts = [50008]
+#tcpAddresses = ['127.0.0.1']
+#tcpInBufferLength = 1024
 
 # Port numbers for receiving data via serial port. serialInPorts is a
 # list variable identifying serial ports. For portability between
@@ -480,6 +480,7 @@ class ThreadedClient:
             
             try:
                 msg = self.serialQueue.get(0)
+                print "Serial In: "+msg
             except:
                 # Was "except Queue.Empty", but want to catch any error, not
                 # just Queue.Empty.
@@ -502,6 +503,7 @@ class ThreadedClient:
 
             try:
                 msg = self.udpQueue.get(0)
+                print "UDP In:    "+msg
             except:
                 # Was "except Queue.Empty", but want to catch any error, not
                 # just Queue.Empty.
@@ -533,27 +535,27 @@ class ThreadedClient:
         """
         Check every 100 ms if there is something new in the queue.
         """
-        self.processIncoming()
-
-        if not self.running:
-
-            # Wait for serial thread(s) to complete.
-            for serialInPort in self.serialRelayThreads.keys():
-                self.serialRelayThreads[serialInPort].join()
-            
-            # Wait for UDP thread(s) to complete.
-            for udpInPort in self.udpRelayThreads.keys():
-                self.udpRelayThreads[udpInPort].join()
-            
-            import sys
-            sys.exit(1)
-            
         try:
-            time.sleep(0.1)
+            while True:
+                self.processIncoming()
+
+                if not self.running:
+
+                    # Wait for serial thread(s) to complete.
+                    for serialInPort in self.serialRelayThreads.keys():
+                        self.serialRelayThreads[serialInPort].join()
+            
+                    # Wait for UDP thread(s) to complete.
+                    for udpInPort in self.udpRelayThreads.keys():
+                        self.udpRelayThreads[udpInPort].join()
+            
+                    import sys
+                    sys.exit(1)
+            
+                time.sleep(0.1)
         except:
             self.endApplication()
-        self.periodicCall()
-
+        
     def serialThread(self,serialInPort):
         #print 'serialInPort is ' + str(serialInPort)
 
@@ -613,7 +615,7 @@ class ThreadedClient:
             if len(udpData) > 0:
                 # udpData is not empty; echo datagram to GUI.
                 self.udpQueue.put(udpData)
-                print udpData
+                #print udpData
         # Close incoming UDP socket.        
         try:
             inUdpSocket.close()
@@ -648,7 +650,7 @@ def logMessage(msg):
 
     msg = msg + '\n'
     logFid.write(msg)
-    logFid.flush()
+    #logFid.flush()
 
 def relayMessage(msg,gui):
 
@@ -658,7 +660,7 @@ def relayMessage(msg,gui):
 
     #print nmeaID
     if nmeaID == "$FKDBS":
-        print msg
+        pass
     if nmeaID == "$SDDBS" or nmeaID == "$SDDPT" or nmeaID =='$PKEL9':
         isDepthDataGram = 1
     else:
@@ -675,6 +677,7 @@ def relayMessage(msg,gui):
         try:
 #            print msg
             #outUdpSocket.sendto(msg.strip(),mvpAddr)
+            print "Out:       "+msg
             outUdpSocket.sendto(msg.strip()+'\n',mvpAddr)
         except:
             print 'Send of non-depth datagram to controller computer failed'
@@ -683,12 +686,13 @@ def relayMessage(msg,gui):
         depthStr = fields[5]
         depth = float(depthStr)
         #print depth
-        print msg
+        #print msg
         if depth != 0:
             # Depth value is not zero, so it will be relayed to
             # MVP controller. Record the time of this event.
             # Relay message to MVP controller.
             try:
+                print "Out:       "+msg
                 outUdpSocket.sendto(msg,mvpAddr)
             except:
                 print 'Send of $SDDBS datagram to controller computer failed'
@@ -714,6 +718,7 @@ def relayMessage(msg,gui):
             # MVP controller. Record the time of this event.
             # Relay message to MVP controller.
             try:
+                print "Out:       "+msg
                 outUdpSocket.sendto(msg,mvpAddr)
             except:
                 print 'Send of $SDDBS datagram to controller computer failed'
@@ -729,7 +734,8 @@ def relayMessage(msg,gui):
             # Depth value is not zero, so it will be relayed to
             # MVP controller. Record the time of this event.
             # Relay message to MVP controller.
-            try:
+            try:    
+                print "Out:       "+msg
                 outUdpSocket.sendto(msg,mvpAddr)
             except:
                 print 'Send of $FKDBS datagram to controller computer failed'
@@ -761,6 +767,8 @@ def relayMessage(msg,gui):
         
         if depthBelowT != 0 and depthBelowS != 0:
             try:
+                print "Out:       "+msg
+
                 outUdpSocket.sendto(msg,mvpAddr)
                 gui.lastDepthEpochTime = time.time()
             except:
