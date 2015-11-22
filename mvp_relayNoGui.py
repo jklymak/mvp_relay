@@ -37,7 +37,7 @@ doSerial=False
 
 # Socket parameters for relaying data to MVP controller:
 #mvpControllerIP = "142.104.154.118"
-mvpControllerIP = "192.168.1.200"
+mvpControllerIP = "10.249.56.110"
 #mvpControllerIP = "192.168.2.160"
 
 # ...MVP controller should be set to listen on this port for
@@ -51,7 +51,8 @@ udpOutPort = 2021
 #udpInPorts = []
 #udpInPorts = [21567, 21568]
 #udpInPorts = [21567]
-udpInPorts = [('127.0.0.1',23),('127.0.0.1',26)]
+udpInPorts = [('10.249.56.79',23)]
+#,('10.249.56.79',26)]
 #udpInPorts = [('127.0.0.1',23)]
 print 'hello'
 
@@ -503,7 +504,7 @@ class ThreadedClient:
 
             try:
                 msg = self.udpQueue.get(0)
-                print "UDP In:    "+msg
+                print "UDP In:    "+msg.strip()
             except:
                 # Was "except Queue.Empty", but want to catch any error, not
                 # just Queue.Empty.
@@ -677,7 +678,7 @@ def relayMessage(msg,gui):
         try:
 #            print msg
             #outUdpSocket.sendto(msg.strip(),mvpAddr)
-            print "Out:       "+msg
+            print "Out:       "+msg.strip()
             outUdpSocket.sendto(msg.strip()+'\n',mvpAddr)
         except:
             print 'Send of non-depth datagram to controller computer failed'
