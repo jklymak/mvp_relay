@@ -7,29 +7,12 @@ the Tully transmits a depth of zero whenever it cannot find the
 bottom. This causes problems because the MVP controller aborts the
 profile if it sees too shallow a depth. The mvp_relay program avfoids
 this problem by withholding zero depths from the MVP controller.
-
-The MVP controller also aborts the profile if too long a time has
-passed with no depth values arriving. There is no alarm raised, so
-there is the possibility that the operator will not notice that data
-acquisition has stopped for some time. The mvp_relay program pops up a
-warning dialogue after a user-defined timeout period to alert the
-operator that the profile may have been aborted.
-
-The program also logs the relayed data.
-
-Kevin Bartlett, 2009-01-08 14:03 PST.
-
-Based on a program by Jacob Hallen, AB Strakt, Sweden, found at
-http://code.activestate.com/recipes/82965/.
-
 """
 
 import time
 import threading
 import queue
 import socket
-import math
-import sys, getopt
 import logging
 import faulthandler
 import signal
@@ -56,25 +39,13 @@ udpOutPort = 2021
 # should be set to send data on these ports. udpInPorts is a list
 # variable, with port numbers separated by commas. Can contain zero,
 # one or more port numbers.
-#udpInPorts = []
-#udpInPorts = [21567, 21568]
-#udpInPorts = [21567]
-#print udpport
 # Tully 2022:
 udpInPorts = [('10.248.237.222', 1025), ('10.248.237.222', 1032)]
-# udpInPorts = [('10.248.237.222', 1025)]
-
-#,('10.249.56.79',26)]
-#udpInPorts = [('127.0.0.1',23)]
 
 # Additional UDP parameters:
 udpInBufferLength = 1024 # [bytes]
 UDPTIMEOUT = 10 # [seconds]
 
-# TCP parameters:
-#tcpInPorts = [50008]
-#tcpAddresses = ['127.0.0.1']
-#tcpInBufferLength = 1024
 
 # Port numbers for receiving data via serial port. serialInPorts is a
 # list variable identifying serial ports. For portability between
@@ -125,31 +96,12 @@ if doSerial:
 # Number of seconds of no depth data or only zero depths before
 # operator is warned. This default value can be overridden in
 # GUI.
-#DEFAULTDEPTHTIMEOUT = 3000000
 DEFAULTDEPTHTIMEOUT = 20000000
 
 # New log files will be created after a certain amount of time has
 # passed.
 MINUTES_PER_LOG = 60;
 
-# Give user time to react; don't pop up no-depth-data warnings
-# more often than this many seconds:
-TIMEBETWEENWARNINGS = 600
-
-# Apparent bug in tkinter causes lift() to fail to raise warning dialogue
-# to top of window stack. Workaround by "refreshing" dialogue box
-# periodically.
-WD_REFRESHINTERVALSECONDS = 2
-
-# GUI appearance:
-windowWidth = 400
-windowHeight = 600
-dataTextHeight = 12 # (text windows height in lines of text)
-
-# ...Number of rows of serial and UDP data to store for
-# display. If too small compared to dataTextHeight, there
-# will be blank space in display.
-NUMTEXTROWS = 14
 
 # Calculate checksums of NMEA strings. Will only relay datagrams
 # to MVP controller if they are valid strings with the correct
@@ -161,54 +113,7 @@ NUMTEXTROWS = 14
 USECHECKSUMS = True
 
 
-################################################################
-class FIFOTextStack:
 
-    """
-    Manage a FIFO stack of text lines. The FIFO stack controls what is
-    passed to the GUI for display.
-    """
-
-    #****************
-    def __init__(self,numRows):
-        self.numRows = numRows
-        self.textList = []
-
-        # Map ASCII control characters (0-31) and non-ASCII characters
-        # (129-255) to question marks for display in GUI.
-        #self.asciiCharTable = "".join(map(chr,range(128))) + "?"*128
-        #self.asciiCharTable = "?"*256
-        self.asciiCharTable = "?"*32 + "".join(map(chr,range(32,128))) + "?"*128
-
-    #****************
-    def push(self,newTextLine):
-        # Pushes a new line onto the end of the stack. If stack
-        # exceeds specified length, then the first line of the
-        # stack is discarded.
-
-        # Convert any ASCII control characters and non-ASCII characters to
-        # question marks before putting them on the stack.
-        newTextLine = newTextLine.translate(self.asciiCharTable)
-        self.textList.append(newTextLine)
-
-        if len(self.textList) > self.numRows:
-            self.textList = self.textList[1:]
-
-    #****************
-    def outputString(self):
-        # Outputs multi-line string, suitable for use in Tk Label object.
-        outStr = ''
-        iLine = 0
-
-        for thisLine in self.textList:
-            outStr = outStr + thisLine
-            iLine = iLine + 1
-
-            # Add newline character (except for last line).
-            if iLine < self.numRows:
-                outStr = outStr + '\n'
-
-        return outStr
 
 
 class ThreadedClient:
@@ -244,7 +149,7 @@ class ThreadedClient:
         self.udpRelayThreads = {} # (dictionary variable)
 
         for udpInPort in udpInPorts:
-            print(udpInPort)
+            logger.info(f'udpInPort {udpInPort}')
             self.udpRelayThreads[udpInPort[1]] = \
                 threading.Thread(target=self.udpThread, args=(udpInPort,))
             self.udpRelayThreads[udpInPort[1]].start()
@@ -275,7 +180,7 @@ class ThreadedClient:
 
             try:
                 msg = self.serialQueue.get(0)
-                print("Serial In: "+msg)
+                logger.info(f"Serial In: {msg}")
             except:
                 # Was "except Queue.Empty", but want to catch any error, not
                 # just Queue.Empty.
@@ -293,7 +198,6 @@ class ThreadedClient:
                 # converted to the correct format with minimal tweaking.
 
                 msgs = msg.split('$') # return list of NMEA strings...
-                print('MSGS:'+ msgs)
                 mout = []
                 for msg in msgs:
                     m,isGoodSt = clean_nmea_str(msg)
@@ -347,7 +251,6 @@ class ThreadedClient:
                         relayMessage(msg,self)
                 else:
                     self.restart=True
-
 
     def periodicCall(self):
         """
@@ -408,11 +311,10 @@ class ThreadedClient:
             pass
 
     def udpThread(self,udpInPort):
-        print('udpInPort is ' + str(udpInPort))
+        logger.debug('udpInPort is ' + str(udpInPort))
 
         # Create socket for listening to incoming UDP data.
         relayAddr = udpInPort
-        print(relayAddr)
         inUdpSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         inUdpSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         inUdpSocket.settimeout(UDPTIMEOUT)
@@ -427,7 +329,7 @@ class ThreadedClient:
                 udpData = inUdpSocket.recv(udpInBufferLength)
                 self.num+=1
             except:
-                print("Failed UDP receive, trying to reconnect")
+                logger.warning("Failed UDP receive, trying to reconnect")
                 udpData=''
                 trynum=0
                 while udpData=='':
@@ -438,7 +340,7 @@ class ThreadedClient:
 
                     inUdpSocket.connect(relayAddr)
                     trynum+=1
-                    print('Try to reconnect: %d'%trynum)
+                    logger.warning('Try to reconnect: %d'%trynum)
                     udpData = inUdpSocket.recv(udpInBufferLength)
             if self.num%100==0:
                 self.num=1
@@ -452,7 +354,7 @@ class ThreadedClient:
                     inUdpSocket.settimeout(UDPTIMEOUT)
                     inUdpSocket.connect(relayAddr)
                     trynum+=1
-                    print('Try to reconnect: %d'%trynum)
+                    logger.warning('Try to reconnect: %d'%trynum)
                     udpData = inUdpSocket.recv(udpInBufferLength)
 
 
@@ -519,7 +421,6 @@ def relayMessage(msg, gui):
     else:
         isDepthDataGram = False
 
-
     if len(msg) == 0:
         # Do not send empty datagrams.
         pass
@@ -547,7 +448,6 @@ def relayMessage(msg, gui):
                 outUdpSocket.sendto(msg,mvpAddr)
             except:
                 print('Send of $SDDBS datagram to controller computer failed')
-
 
     elif nmeaID == "$SDDBS":
         # Datagram is a depth datagram of "$SDDBS" format. This is the
@@ -589,7 +489,7 @@ def relayMessage(msg, gui):
                 outUdpSocket.sendto(msg,mvpAddr)
             except:
                 print('Send of $FKDBS datagram to controller computer failed')
-    else:
+    elif nmeaID == "$SDDPT":
         logger.debug('Depth!')
         # Datagram is a depth datagram, but of $SDDPT format. This is
         # the type of NMEA string that comes from the EA600
@@ -621,9 +521,9 @@ def relayMessage(msg, gui):
                 outUdpSocket.sendto(msg.encode() , mvpAddr)
                 gui.lastDepthEpochTime = time.time()
             except:
-                print('Send of $SDDPT depth datagram to controller computer failed')
+                logger.warning('Send of $SDDPT depth datagram to controller computer failed')
         else:
-            print('zero depth withheld')
+            logger.info('zero depth withheld')
 
 def msg_split(msg):
     mout=[]
@@ -731,6 +631,7 @@ def clean_nmea_str(nmeaStr):
 # the MVP. Figure 51 in the MVP manual shows there is a single
 # IP/Port number pair for all "NAV" data, so this socket will be used
 # for both echosounder data and GPS data.
+logger.info(f'Writing to: {mvpControllerIP}:{udpOutPort}')
 mvpAddr = (mvpControllerIP,udpOutPort)
 outUdpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
@@ -745,7 +646,7 @@ try:
     while 1:
         time.sleep(0.1)
 except:
-    print('killing application')
+    logger.info('killing application')
     client.endApplication()
 
 
