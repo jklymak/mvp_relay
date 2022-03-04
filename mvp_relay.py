@@ -21,7 +21,7 @@ faulthandler.register(signal.SIGUSR1)
 
 logger = logging.getLogger(__name__)
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 doSerial=False
 ################################################################
@@ -124,21 +124,16 @@ class ThreadedClient:
     """
     def __init__(self):
         """
-        Start the GUI and the asynchronous threads. We are in the main
-        (original) thread of the application, which will later be used by
-        the GUI. We spawn a new thread for the worker.
+        Start the asynchronous threads. We are in the main
+        (original) thread of the application.
         """
-        #        self.master = master
 
         # Create the queues.
         self.serialQueue = queue.Queue()
         self.udpQueue = queue.Queue()
 
-        # Set up the GUI part
-        self.running = 1
-        self.num=1
-        # Start thread(s) for relaying serial data to MVP controller.
-        self.serialRelayThreads = {} # (dictionary variable)
+        self.running = True
+        self.num = 1
 
         for serialInPort in serialInPorts:
             self.serialRelayThreads[serialInPort] = \
@@ -148,6 +143,7 @@ class ThreadedClient:
         # Start thread(s) for relaying UDP data to MVP controller.
         self.udpRelayThreads = {} # (dictionary variable)
 
+        # make a listening thread for each udp port
         for udpInPort in udpInPorts:
             logger.info(f'udpInPort {udpInPort}')
             self.udpRelayThreads[udpInPort[1]] = \
@@ -165,96 +161,60 @@ class ThreadedClient:
         #global lastDepthEpochTime
         #global lastDepthCloseTime
 
-        serialQueueSize = self.serialQueue.qsize()
-        udpQueueSize = self.udpQueue.qsize()
-        # Make FIFO text stack to contain lines of UDP data.
-        #self.udpTextStack = FIFOTextStack(NUMTEXTROWS)
-        # Make FIFO text stack to contain lines of serial data.
-        #self.serialTextStack = FIFOTextStack(NUMTEXTROWS)
+        logger = logging.getLogger('processIncoming')
+        qs = [self.udpQueue]
+        qnames = ['UDP']
 
-        while serialQueueSize > 0 or udpQueueSize > 0:
-            serialQueueSize = self.serialQueue.qsize()
-            udpQueueSize = self.udpQueue.qsize()
+        if doSerial:
+            qs += [self.serialQueue]
+            qnames += ['Serial']
 
-            getFailed = False
-
-            try:
-                msg = self.serialQueue.get(0)
-                logger.info(f"Serial In: {msg}")
-            except:
-                # Was "except Queue.Empty", but want to catch any error, not
-                # just Queue.Empty.
-                getFailed = True
-
-            if getFailed == False:
-                # Log the message without modification, apart from adding
-                # a timestamp.
-                datedMsg = time.strftime("%Y-%m-%d %H:%M:%S",time.localtime()) + '--' + msg
-                datedMsg = datedMsg.rstrip()
-                logMessage(datedMsg)
-                self.serialTextStack.push(datedMsg)
-                outputStr = self.serialTextStack.outputString()
-                # Relay the message if it is of correct format or if it can be
-                # converted to the correct format with minimal tweaking.
-
-                msgs = msg.split('$') # return list of NMEA strings...
-                mout = []
-                for msg in msgs:
-                    m,isGoodSt = clean_nmea_str(msg)
-                    if isGoodSt:
-                        mout.append(m)
-                if len(mout)>0:
-                    for msg in mout:
-                        relayMessage(msg,self)
-            getFailed = False
-
-            try:
-                msg = self.udpQueue.get(block=False, timeout=2)
-                logger.debug(f'Get: {msg}')
-            except queue.Empty:
-                # Was "except Queue.Empty", but want to catch any error, not
-                # just Queue.Empty.
-                # logger.debug('UDP queue empty')
-                getFailed = True
-
-            if not getFailed:
-                logger.debug('Succeded udp')
-                # print "UDP In %03d:    %s"%(self.num%1000,msg.strip())
-                # Log the message without modification, apart from adding
-                # a timestamp.
-                datedMsg = time.strftime("%Y-%m-%d %H:%M:%S",time.localtime()) + '--' + msg
-                datedMsg = datedMsg.rstrip()
-                logMessage(datedMsg)
-                # self.udpTextStack.push(datedMsg)
-                #outputStr = self.udpTextStack.outputString()
-                #print outputStr
-                # Relay the message if it is of correct format or if it can be
-                # converted to the correct format with minimal tweaking.
+        for q, qname in zip(qs, qnames):
+            logger.debug(f'Processing queue: {qname}')
+            qsize = q.qsize()
+            logger.debug(f'   queue size: {qsize}')
+            if qsize > 0:
+                getSucceeded = False
                 try:
-                    msgs = msg_split(msg)
-                except:
-                    print('grrr')
-                mout = []
-                logger.debug(f'msgs {msgs}')
-                for msg in msgs:
-                    m, isGoodStr = clean_nmea_str(msg)
-                    if isGoodStr:
-                        mout.append(m)
-                logger.debug(f'mout + {mout}')
-                logger.debug('<<<mout')
-                #isGoodStr = nmea_checksum(msg)
+                    msg = q.get(block=True, timeout=2)
+                    logger.debug(f'Get: {msg}')
+                    getSucceeded = True
+                except queue.Empty:
+                    getSucceeded = False
 
-                # Relay the message if it is of correct format.
-                if len(mout)>0:
-                    for msg in mout:
-                        logger.debug(f'relay {msg}')
-                        relayMessage(msg,self)
-                else:
-                    self.restart=True
+                if getSucceeded:
+                    logger.debug('Succeded get')
+                    # Log the message without modification, apart from adding
+                    # a timestamp.
+                    datedMsg = time.strftime("%Y-%m-%d %H:%M:%S",time.localtime()) + '--' + msg
+                    datedMsg = datedMsg.rstrip()
+                    logMessage(datedMsg)
+                    # Relay the message if it is of correct format or if it can be
+                    # converted to the correct format with minimal tweaking.
+                    try:
+                        msgs = msg_split(msg)
+                    except:
+                        print('grrr')
+                    mout = []
+                    logger.debug(f'msgs {msgs}')
+                    for msg in msgs:
+                        m, isGoodStr = clean_nmea_str(msg)
+                        if isGoodStr:
+                            mout.append(m)
+                    logger.debug(f'mout + {mout}')
+                    logger.debug('<<<mout')
+
+                    # Relay the message if it is of correct format.
+                    if len(mout)>0:
+                        for msg in mout:
+                            logger.debug(f'relay {msg}')
+                            relayMessage(msg)
+                    else:
+                        self.restart=True
 
     def periodicCall(self):
         """
-        Check every 100 ms if there is something new in the queue.
+        Check every 100 ms if there is something new in the queue and process it.
         """
         try:
             while True:
@@ -310,69 +270,42 @@ class ThreadedClient:
         except:
             pass
 
-    def udpThread(self,udpInPort):
+    def udpThread(self, udpInPort):
+        """
+        Thread for each udp port to listen and fill the udp queue
+        """
+        logger = logging.getLogger('udpThread')
         logger.debug('udpInPort is ' + str(udpInPort))
 
         # Create socket for listening to incoming UDP data.
         relayAddr = udpInPort
         inUdpSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-        inUdpSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        inUdpSocket.settimeout(UDPTIMEOUT)
-        # ...Bind incoming UDP socket to address of local machine.
-        inUdpSocket.connect(relayAddr)
 
         while self.running:
             # Read in data from network.
             logger.debug('#### while')
-            udpData = ''
-            try:
-                udpData = inUdpSocket.recv(udpInBufferLength)
-                self.num+=1
-            except:
-                logger.warning("Failed UDP receive, trying to reconnect")
-                udpData=''
-                trynum=0
-                while udpData=='':
-                    inUdpSocket.close()
-                    inUdpSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-                    inUdpSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    inUdpSocket.settimeout(UDPTIMEOUT)
 
-                    inUdpSocket.connect(relayAddr)
-                    trynum+=1
-                    logger.warning('Try to reconnect: %d'%trynum)
+            with socket.socket(socket.AF_INET,socket.SOCK_STREAM) as inUdpSocket:
+                inUdpSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                inUdpSocket.settimeout(UDPTIMEOUT)
+                # ...Bind incoming UDP socket to address of local machine.
+                inUdpSocket.connect(relayAddr)
+
+                try:
                     udpData = inUdpSocket.recv(udpInBufferLength)
-            if self.num%100==0:
-                self.num=1
-                udpData=''
-                print('Closing')
-                trynum=0
-                while udpData=='':
-                    inUdpSocket.close()
-                    inUdpSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-                    inUdpSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    inUdpSocket.settimeout(UDPTIMEOUT)
-                    inUdpSocket.connect(relayAddr)
-                    trynum+=1
-                    logger.warning('Try to reconnect: %d'%trynum)
-                    udpData = inUdpSocket.recv(udpInBufferLength)
+                    self.num+=1
+                    failures = 0
+                except:
+                    failures += 1
+                    logger.warning("Failed UDP receive, trying to reconnect")
 
-
-            # If UDP connection timed out, then udpData will be empty.
-            if len(udpData) > 0:
-                logger.debug(f'udp: {udpData}')
-                logger.debug(f'udp len: {len(udpData)}')
-                # udpData is not empty; echo datagram to GUI.
-                self.udpQueue.put(udpData.decode('utf8'))
-                logger.debug(f'udp put done')
-
-                # print('Put: '+ udpData.decode('utf8'))
-                # print('Done put')
-        # Close incoming UDP socket.
-        try:
-            inUdpSocket.close()
-        except:
-            pass
+                # If UDP connection timed out, then udpData will be empty.
+                if len(udpData) > 0:
+                    logger.debug(f'udp: {udpData}')
+                    logger.debug(f'udp len: {len(udpData)}')
+                    # udpData is not empty; echo datagram to GUI.
+                    self.udpQueue.put(udpData.decode('utf8'))
+                    logger.debug(f'udp put done')
 
 
     def endApplication(self):
@@ -404,7 +337,7 @@ def logMessage(msg):
     logFid.write(msg)
     logFid.flush()
 
-def relayMessage(msg, gui):
+def relayMessage(msg):
 
     # Determine if this is a depth datagram or not.
     fields = msg.split(',')
@@ -412,7 +345,7 @@ def relayMessage(msg, gui):
     fields[-1] = fields[-1][:-3]
     logger.debug(f'Fields {fields}')
 
-    logger.debug('relayed message: {msg}')
+    logger.debug(f'relayed message: {msg}')
 
     if nmeaID == "$FKDBS":
         pass
@@ -519,7 +452,6 @@ def relayMessage(msg, gui):
             try:
                 logger.info("Out depth:  "+msg)
                 outUdpSocket.sendto(msg.encode() , mvpAddr)
-                gui.lastDepthEpochTime = time.time()
             except:
                 logger.warning('Send of $SDDPT depth datagram to controller computer failed')
         else:
