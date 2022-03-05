@@ -21,7 +21,7 @@ faulthandler.register(signal.SIGUSR1)
 
 logger = logging.getLogger(__name__)
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 doSerial=False
 ################################################################
